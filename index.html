@@ -2,55 +2,131 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>字根武器塔防 - 穩定綁定防搶字版</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>字根武器塔防 - 手機適配版</title>
     <style>
-        body { background: #1a1a1a; color: white; font-family: sans-serif; text-align: center; margin: 0; padding: 20px; }
-        canvas { background: #222; border: 2px solid #555; display: block; margin: 10px auto; cursor: grab; }
-        canvas:active { cursor: grabbing; }
-        .ui-panel { margin-top: 10px; display: flex; justify-content: center; gap: 15px; align-items: center; flex-wrap: wrap; }
-        button { padding: 8px 16px; font-size: 15px; cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 4px; font-weight: bold; }
-        button:hover { background: #45a049; }
-        button:disabled { background: #555; cursor: not-allowed; }
-        .weapon-btn { background: #34495e; border: 2px solid #7f8c8d; }
-        .weapon-btn.active { background: #2980b9; border-color: #fff; box-shadow: 0 0 8px rgba(255,255,255,0.4); }
-        .hand-container { display: flex; justify-content: center; gap: 10px; margin-top: 10px; }
-        .hand-slot { width: 60px; height: 60px; background: #444; border: 2px dashed #888; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 20px; cursor: grab; user-select: none; }
-        .hand-slot:active { cursor: grabbing; }
-        .instruction { color: #aaa; font-size: 14px; margin-top: 5px; }
-        .stats-bar { display: flex; justify-content: center; gap: 30px; font-size: 18px; margin-bottom: 5px; }
+        * { box-sizing: border-box; touch-action: manipulation; }
+        body { 
+            background: #1a1a1a; 
+            color: white; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            text-align: center; 
+            margin: 0; 
+            padding: 10px; 
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        h1 { font-size: 1.25rem; margin: 5px 0; }
+        
+        .stats-bar { 
+            display: flex; 
+            justify-content: center; 
+            gap: 15px; 
+            font-size: 14px; 
+            margin-bottom: 5px; 
+            flex-wrap: wrap;
+        }
         .gold { color: #f1c40f; }
         .hp { color: #e74c3c; font-weight: bold; }
         .wave-info { color: #3498db; font-weight: bold; }
+
+        /* 畫布響應式容器：維持 16:9 比例縮放 */
+        .canvas-container {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            position: relative;
+        }
+        canvas { 
+            background: #222; 
+            border: 2px solid #555; 
+            display: block; 
+            width: 100%; 
+            height: auto; 
+            aspect-ratio: 16 / 9;
+            touch-action: none;
+        }
+
+        .ui-panel { 
+            margin-top: 8px; 
+            display: flex; 
+            justify-content: center; 
+            gap: 8px; 
+            align-items: center; 
+            flex-wrap: wrap; 
+        }
+        button { 
+            padding: 10px 14px; 
+            font-size: 14px; 
+            cursor: pointer; 
+            background: #4CAF50; 
+            color: white; 
+            border: none; 
+            border-radius: 6px; 
+            font-weight: bold; 
+            min-height: 42px;
+        }
+        button:hover { background: #45a049; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        
+        .weapon-btn { background: #34495e; border: 2px solid #7f8c8d; }
+        .weapon-btn.active { background: #2980b9; border-color: #fff; box-shadow: 0 0 8px rgba(255,255,255,0.4); }
+        
+        .hand-container { display: flex; justify-content: center; gap: 12px; margin-top: 8px; }
+        .hand-slot { 
+            width: 64px; 
+            height: 64px; 
+            background: #333; 
+            border: 2px dashed #888; 
+            border-radius: 8px;
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-weight: bold; 
+            font-size: 22px; 
+            touch-action: none;
+            transition: all 0.15s ease;
+        }
+        /* 被選中準備放置時的外框高亮 */
+        .hand-slot.selected {
+            border-color: #f1c40f;
+            background: #443c1a;
+            transform: scale(1.08);
+            box-shadow: 0 0 10px rgba(241, 196, 15, 0.6);
+        }
+
+        .instruction { color: #aaa; font-size: 12px; margin: 4px 0; }
     </style>
 </head>
 <body>
 
-    <h1>字根武器塔防 - 穩定綁定防搶字版</h1>
+    <h1>字根武器塔防 - 手機適配版</h1>
     <div class="stats-bar">
-        <div>生命值: <span id="hpDisplay" class="hp">20 / 20</span></div>
+        <div>HP: <span id="hpDisplay" class="hp">20 / 20</span></div>
         <div>金幣: <span id="goldDisplay" class="gold">130</span> G</div>
-        <div>當前進度: <span id="waveDisplay" class="wave-info">準備開始 (第 1 / 5 波)</span></div>
+        <div><span id="waveDisplay" class="wave-info">第 1 / 5 波</span></div>
     </div>
-    <p class="instruction">點擊場上武器可查看攻擊範圍；將手牌拖到已綁定飾字上可直接替換屬性，舊字自動回手！</p>
 
-    <!-- 遊戲畫布 (800x450) -->
-    <canvas id="gameCanvas" width="800" height="450" draggable="true"></canvas>
+    <!-- 遊戲畫布 (內部維持 800x450，CSS 自動縮放適應手機螢幕) -->
+    <div class="canvas-container">
+        <canvas id="gameCanvas" width="800" height="450"></canvas>
+    </div>
+
+    <p class="instruction">💡 手機操作：點選手牌字後點地圖空格放置；也可按住拖曳進地圖。</p>
 
     <!-- 介面控制區 -->
     <div class="ui-panel">
-        <span>建造選擇：</span>
-        <button id="btnWeapon_刀" class="weapon-btn active" onclick="selectWeaponToBuild('刀')">刀 (均衡)</button>
-        <button id="btnWeapon_弓" class="weapon-btn" onclick="selectWeaponToBuild('弓')">弓 (遠程狙擊)</button>
-        <button id="btnWeapon_杖" class="weapon-btn" onclick="selectWeaponToBuild('杖')">杖 (範圍群傷)</button>
-        <button onclick="drawRune()">抽修飾字 (10G)</button>
+        <button id="btnWeapon_刀" class="weapon-btn active" onclick="selectWeaponToBuild('刀')">刀</button>
+        <button id="btnWeapon_弓" class="weapon-btn" onclick="selectWeaponToBuild('弓')">弓</button>
+        <button id="btnWeapon_杖" class="weapon-btn" onclick="selectWeaponToBuild('杖')">杖</button>
+        <button onclick="drawRune()">抽字 (10G)</button>
         <button id="startWaveBtn" onclick="startNextWave()" style="background: #e67e22;">開始第 1 波</button>
     </div>
 
-    <p>手牌暫存區 (僅限未綁定的修飾字可拖回回收):</p>
     <div class="hand-container">
-        <div class="hand-slot" id="slot0" ondragover="allowDrop(event)" ondrop="dropToHand(event, 0)">（空）</div>
-        <div class="hand-slot" id="slot1" ondragover="allowDrop(event)" ondrop="dropToHand(event, 1)">（空）</div>
-        <div class="hand-slot" id="slot2" ondragover="allowDrop(event)" ondrop="dropToHand(event, 2)">（空）</div>
+        <div class="hand-slot" id="slot0">（空）</div>
+        <div class="hand-slot" id="slot1">（空）</div>
+        <div class="hand-slot" id="slot2">（空）</div>
     </div>
 
 <script>
@@ -72,8 +148,9 @@
     let spawnInterval = 45; 
     let spawnCounter = 0;
 
-    // 當前選取的格子座標 {r, c}，若無選取則為 null
     let selectedGridPos = null;
+    // 手機點選手牌放置的選取狀態（-1 表示未選取）
+    let selectedHandIndex = -1; 
 
     const waveConfigs = [
         { wave: 1, count: 6, health: 70, speed: 1.4, isBoss: false },
@@ -131,9 +208,9 @@
         enemiesToSpawnCount = config.count;
         spawnCounter = 0;
 
-        document.getElementById("startWaveBtn").innerText = `第 ${currentWave} 波戰鬥中...`;
+        document.getElementById("startWaveBtn").innerText = `第 ${currentWave} 波中...`;
         document.getElementById("startWaveBtn").disabled = true;
-        document.getElementById("waveDisplay").innerText = `第 ${currentWave} / 5 波戰鬥進行中`;
+        document.getElementById("waveDisplay").innerText = `第 ${currentWave} / 5 波戰鬥中`;
     }
 
     function drawRune() {
@@ -153,6 +230,11 @@
         for (let i = 0; i < 3; i++) {
             let slot = document.getElementById("slot" + i);
             slot.innerText = playerHand[i] ? playerHand[i] : "（空）";
+            if (selectedHandIndex === i) {
+                slot.classList.add("selected");
+            } else {
+                slot.classList.remove("selected");
+            }
         }
     }
 
@@ -160,99 +242,38 @@
         return pathTiles.some(p => p.c === c && p.r === r);
     }
 
-    // 拖曳狀態管理
-    let draggedSource = null; 
-    let draggedData = null;   
+    // 將螢幕/觸控座標精確換算成 Canvas 內部的格子座標 (r, c)
+    function getGridCoordFromScreen(clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
 
-    for (let i = 0; i < 3; i++) {
-        let slotElem = document.getElementById("slot" + i);
-        slotElem.setAttribute("draggable", "true");
-        slotElem.addEventListener("dragstart", (e) => {
-            if (i < playerHand.length) {
-                draggedSource = 'hand';
-                draggedData = i;
-                e.dataTransfer.setData("text/plain", "hand:" + i);
-            } else {
-                e.preventDefault();
-            }
-        });
+        let canvasX = (clientX - rect.left) * scaleX;
+        let canvasY = (clientY - rect.top) * scaleY;
+
+        let c = Math.floor(canvasX / TILE_SIZE);
+        let r = Math.floor(canvasY / TILE_SIZE);
+        return { c, r };
     }
 
-    canvas.addEventListener("dragstart", (e) => {
-        if (gameState === "DEFEAT") { e.preventDefault(); return; }
-        const rect = canvas.getBoundingClientRect();
-        let c = Math.floor((e.clientX - rect.left) / TILE_SIZE);
-        let r = Math.floor((e.clientY - rect.top) / TILE_SIZE);
+    // 放置或置換手牌到格子的通用邏輯
+    function placeHandCharToGrid(handIndex, r, c) {
+        if (c < 0 || c >= COLS || r < 0 || r >= ROWS || isPath(c, r)) return false;
 
-        if (c >= 0 && c < COLS && r >= 0 && r < ROWS) {
-            let cell = grid[r][c];
-            if (!cell) {
-                e.preventDefault();
-                return;
-            }
-
-            // 若拖動的字原本有搭檔，主動解除搭檔的綁定狀態
-            if (cell.isLocked && cell.partnerPos) {
-                let p = cell.partnerPos;
-                let partner = grid[p.r][p.c];
-                if (partner) {
-                    partner.isLocked = false;
-                    partner.partnerPos = null;
-                    partner.orientation = null;
-                }
-                cell.isLocked = false;
-                cell.partnerPos = null;
-                cell.orientation = null;
-            }
-
-            draggedSource = 'grid';
-            draggedData = { c: c, r: r, cell: cell };
-            e.dataTransfer.setData("text/plain", "grid:" + c + "," + r);
-
-            grid[r][c] = null; 
-            evaluateGrid();    
-        }
-    });
-
-    canvas.addEventListener("dragover", (e) => { e.preventDefault(); });
-
-    canvas.addEventListener("drop", (e) => {
-        e.preventDefault();
-        const rect = canvas.getBoundingClientRect();
-        let c = Math.floor((e.clientX - rect.left) / TILE_SIZE);
-        let r = Math.floor((e.clientY - rect.top) / TILE_SIZE);
-
-        if (c < 0 || c >= COLS || r < 0 || r >= ROWS || isPath(c, r)) {
-            restoreDragSource();
-            return;
-        }
-
+        let droppedChar = playerHand[handIndex];
         let targetCell = grid[r][c];
 
-        // 1. 來源是手牌
-        if (draggedSource === 'hand') {
-            let handIndex = draggedData;
-            let droppedChar = playerHand[handIndex];
-
-            if (targetCell !== null) {
-                if (targetCell.type === 'weapon') {
-                    alert("武器不能收進手牌！請將飾字放在武器的左方或上方空格。");
-                    draggedSource = null;
-                    draggedData = null;
-                    return;
-                }
-
-                // 目標是修飾字（不論是否鎖定）：允許直接置換，舊字退回手牌，並完整保留原本的鎖定關係
-                let oldChar = targetCell.char;
-                targetCell.char = droppedChar;
-                playerHand[handIndex] = oldChar;
-                updateUI();
-                evaluateGrid();
-                draggedSource = null;
-                draggedData = null;
-                return;
+        if (targetCell !== null) {
+            if (targetCell.type === 'weapon') {
+                alert("武器不能收進手牌！請放在武器左方或上方空格。");
+                return false;
             }
-
+            // 目標是飾字：替換內容，舊字退回手牌
+            let oldChar = targetCell.char;
+            targetCell.char = droppedChar;
+            playerHand[handIndex] = oldChar;
+        } else {
+            // 空地：放入新手牌
             grid[r][c] = {
                 char: droppedChar,
                 type: 'modifier',
@@ -262,137 +283,101 @@
                 color: '#7f8c8d'
             };
             playerHand.splice(handIndex, 1);
-            updateUI();
-        }
-        // 2. 來源是地圖格子
-        else if (draggedSource === 'grid') {
-            let src = draggedData;
-            if (targetCell !== null) {
-                if (targetCell.isLocked && targetCell.partnerPos) {
-                    let tp = targetCell.partnerPos;
-                    let tPartner = grid[tp.r][tp.c];
-                    if (tPartner) {
-                        tPartner.isLocked = false;
-                        tPartner.partnerPos = null;
-                        tPartner.orientation = null;
-                    }
-                    targetCell.isLocked = false;
-                    targetCell.partnerPos = null;
-                    targetCell.orientation = null;
-                }
-
-                grid[r][c] = src.cell;
-                grid[src.r][src.c] = targetCell;
-            } else {
-                grid[r][c] = src.cell;
-            }
         }
 
-        draggedSource = null;
-        draggedData = null;
-        evaluateGrid(); 
-    });
-
-    function restoreDragSource() {
-        if (draggedSource === 'grid') {
-            let src = draggedData;
-            grid[src.r][src.c] = src.cell; 
-        }
-        draggedSource = null;
-        draggedData = null;
+        selectedHandIndex = -1;
+        updateUI();
         evaluateGrid();
+        return true;
     }
 
-    function allowDrop(ev) { ev.preventDefault(); }
-
-    function dropToHand(ev, slotIndex) {
-        ev.preventDefault();
-        if (draggedSource === 'grid') {
-            let src = draggedData;
-            
-            if (src.cell.type === 'weapon') {
-                alert("武器（刀/弓/杖）造好後無法收回手牌，只能在地圖上移動位置！");
-                grid[src.r][src.c] = src.cell; 
-                draggedSource = null;
-                draggedData = null;
-                evaluateGrid();
-                return;
-            }
-
-            if (playerHand.length < 3) {
-                playerHand.push(src.cell.char);
-                updateUI();
-                evaluateGrid();
-            } else {
-                alert("手牌已滿，無法回收！原棋子已放回。");
-                grid[src.r][src.c] = src.cell; 
-            }
-        }
-        draggedSource = null;
-        draggedData = null;
-    }
-
-    // 點擊事件：分離「選取顯示範圍」與「空地建造」邏輯
-    canvas.addEventListener("click", (e) => {
-        if (draggedSource || gameState === "DEFEAT") return;
-
-        const rect = canvas.getBoundingClientRect();
-        let c = Math.floor((e.clientX - rect.left) / TILE_SIZE);
-        let r = Math.floor((e.clientY - rect.top) / TILE_SIZE);
-
-        if (c >= 0 && c < COLS && r >= 0 && r < ROWS) {
-            // 點擊路徑：清空選取
-            if (isPath(c, r)) {
+    // 手牌點擊事件（支援手機點選手牌後再點地圖放置）
+    for (let i = 0; i < 3; i++) {
+        let slotElem = document.getElementById("slot" + i);
+        
+        slotElem.addEventListener("click", () => {
+            if (i < playerHand.length) {
+                // 若重複點擊同一個則取消選取
+                selectedHandIndex = (selectedHandIndex === i) ? -1 : i;
                 selectedGridPos = null;
-                return;
+                updateUI();
             }
+        });
 
-            let cell = grid[r][c];
-
-            // 1. 點擊已有內容的格子
-            if (cell !== null) {
-                if (cell.type === 'weapon') {
-                    // 選取該武器
-                    selectedGridPos = { r: r, c: c };
-                } else if (cell.type === 'modifier' && cell.isLocked && cell.partnerPos) {
-                    // 若點擊的是已鎖定的飾字，自動選取與其相連的搭檔武器
-                    selectedGridPos = { r: cell.partnerPos.r, c: cell.partnerPos.c };
-                } else {
-                    selectedGridPos = null;
-                }
-                return;
+        // 手機觸控拖曳支援 (Touch Drag)
+        slotElem.addEventListener("touchstart", (e) => {
+            if (i < playerHand.length) {
+                selectedHandIndex = i;
+                updateUI();
             }
+        }, { passive: true });
 
-            // 2. 點擊空白格子：建造新武器
-            selectedGridPos = null;
-
-            if (playerGold < 30) {
-                alert("金幣不足 30G，無法建造武器！");
-                return;
+        slotElem.addEventListener("touchend", (e) => {
+            let touch = e.changedTouches[0];
+            let pos = getGridCoordFromScreen(touch.clientX, touch.clientY);
+            if (pos.c >= 0 && pos.c < COLS && pos.r >= 0 && pos.r < ROWS) {
+                placeHandCharToGrid(i, pos.r, pos.c);
             }
+        });
+    }
 
-            playerGold -= 30;
-            grid[r][c] = {
-                char: selectedWeaponType,
-                type: 'weapon',
-                isLocked: false,
-                partnerPos: null,
-                orientation: null,
-                range: 110, damage: 15, attackSpeed: 1.0, aoe: 0, effect: 'none', color: '#3498db',
-                lastAttackTime: 0
-            };
-            // 建造後預設選取新武器
-            selectedGridPos = { r: r, c: c };
-            updateUI();
-            evaluateGrid();
-        } else {
-            selectedGridPos = null;
+    // 點擊 Canvas 事件（處理：手牌放置、武器選取、武器建造）
+    canvas.addEventListener("click", (e) => {
+        if (gameState === "DEFEAT") return;
+
+        let { c, r } = getGridCoordFromScreen(e.clientX, e.clientY);
+        if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return;
+
+        // 若目前處於手牌選中狀態，優先執行放置操作
+        if (selectedHandIndex !== -1) {
+            placeHandCharToGrid(selectedHandIndex, r, c);
+            return;
         }
+
+        if (isPath(c, r)) {
+            selectedGridPos = null;
+            return;
+        }
+
+        let cell = grid[r][c];
+
+        // 點選已有內容
+        if (cell !== null) {
+            if (cell.type === 'weapon') {
+                selectedGridPos = { r: r, c: c };
+            } else if (cell.type === 'modifier' && cell.isLocked && cell.partnerPos) {
+                selectedGridPos = { r: cell.partnerPos.r, c: cell.partnerPos.c };
+            } else {
+                selectedGridPos = null;
+            }
+            return;
+        }
+
+        // 點選空地：建造新武器
+        selectedGridPos = null;
+
+        if (playerGold < 30) {
+            alert("金幣不足 30G，無法建造武器！");
+            return;
+        }
+
+        playerGold -= 30;
+        grid[r][c] = {
+            char: selectedWeaponType,
+            type: 'weapon',
+            isLocked: false,
+            partnerPos: null,
+            orientation: null,
+            range: 110, damage: 15, attackSpeed: 1.0, aoe: 0, effect: 'none', color: '#3498db',
+            lastAttackTime: 0
+        };
+        selectedGridPos = { r: r, c: c };
+        updateUI();
+        evaluateGrid();
     });
 
     // 核心持久化穩定配對邏輯
     function evaluateGrid() {
-        // 第一步：驗證所有既有鎖定是否合法
         for (let r = 0; r < ROWS; r++) {
             for (let c = 0; c < COLS; c++) {
                 let cell = grid[r][c];
@@ -413,7 +398,6 @@
             }
         }
 
-        // 第二步：重置未鎖定格子的基礎數值
         for (let r = 0; r < ROWS; r++) {
             for (let c = 0; c < COLS; c++) {
                 let cell = grid[r][c];
@@ -439,7 +423,6 @@
             }
         }
 
-        // 第三步：為未鎖定的武器尋找未鎖定的修飾字
         for (let r = 0; r < ROWS; r++) {
             for (let c = 0; c < COLS; c++) {
                 let cell = grid[r][c];
@@ -474,7 +457,6 @@
             }
         }
 
-        // 第四步：為已鎖定的組合計算數值加成與主題色
         for (let r = 0; r < ROWS; r++) {
             for (let c = 0; c < COLS; c++) {
                 let cell = grid[r][c];
@@ -556,17 +538,17 @@
                 gameState = "PREPARE";
                 playerGold += 50; 
                 updateUI();
-                document.getElementById("startWaveBtn").innerText = `開始第 ${currentWave + 1} 波`;
+                document.getElementById("startWaveBtn").innerText = `第 ${currentWave + 1} 波`;
                 document.getElementById("startWaveBtn").disabled = false;
-                document.getElementById("waveDisplay").innerText = `第 ${currentWave} 波勝利！獲得 50G 獎勵`;
+                document.getElementById("waveDisplay").innerText = `第 ${currentWave} 波勝利！+50G`;
             } else {
                 gameState = "VICTORY";
-                document.getElementById("waveDisplay").innerText = "🏆 恭喜通關全部 5 波！";
-                document.getElementById("startWaveBtn").innerText = "通關完成";
+                document.getElementById("waveDisplay").innerText = "🏆 通關完成！";
+                document.getElementById("startWaveBtn").innerText = "挑戰成功";
             }
         }
 
-        // 網格與道路繪製
+        // 網格繪製
         for (let r = 0; r < ROWS; r++) {
             for (let c = 0; c < COLS; c++) {
                 let x = c * TILE_SIZE;
@@ -588,7 +570,7 @@
         ctx.lineWidth = 2;
         ctx.strokeRect(lastTile.c * TILE_SIZE, lastTile.r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
 
-        // 繪製相融色塊
+        // 合成字塊繪製
         let drawnMerged = Array(ROWS).fill(null).map(() => Array(COLS).fill(false));
 
         for (let r = 0; r < ROWS; r++) {
@@ -634,7 +616,7 @@
             }
         }
 
-        // 僅在點選武器時單獨繪製該武器的攻擊範圍圈
+        // 單獨繪製被選中的武器範圍
         if (selectedGridPos) {
             let selCell = grid[selectedGridPos.r][selectedGridPos.c];
             if (selCell && selCell.type === 'weapon') {
@@ -649,7 +631,6 @@
                 ctx.lineWidth = 2;
                 ctx.stroke();
 
-                // 為選取的格子加上高亮外邊框
                 ctx.strokeStyle = "#f1c40f";
                 ctx.lineWidth = 2;
                 ctx.strokeRect(selectedGridPos.c * TILE_SIZE + 2, selectedGridPos.r * TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4);
@@ -748,7 +729,7 @@
             }
         }
 
-        // 敵人更新與扣血
+        // 敵人更新
         for (let i = enemies.length - 1; i >= 0; i--) {
             let enemy = enemies[i];
 
@@ -784,8 +765,8 @@
 
                     if (playerHp <= 0) {
                         gameState = "DEFEAT";
-                        document.getElementById("waveDisplay").innerText = "💀 防線被突破，遊戲失敗！";
-                        document.getElementById("startWaveBtn").innerText = "重新整理重來";
+                        document.getElementById("waveDisplay").innerText = "💀 防線被突破！";
+                        document.getElementById("startWaveBtn").innerText = "重新開始";
                         document.getElementById("startWaveBtn").disabled = false;
                         document.getElementById("startWaveBtn").onclick = () => location.reload();
                     }
@@ -819,7 +800,7 @@
             ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.fillStyle = "#e74c3c";
-            ctx.font = "bold 32px sans-serif";
+            ctx.font = "bold 28px sans-serif";
             ctx.textAlign = "center";
             ctx.fillText("防 線 陷 落 - 挑 戰 失 敗", canvas.width / 2, canvas.height / 2);
         }
