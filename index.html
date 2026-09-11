@@ -1,1 +1,844 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>字根武器塔防 - 穩定綁定防搶字版</title>
+    <style>
+        body { background: #1a1a1a; color: white; font-family: sans-serif; text-align: center; margin: 0; padding: 20px; }
+        canvas { background: #222; border: 2px solid #555; display: block; margin: 10px auto; cursor: grab; }
+        canvas:active { cursor: grabbing; }
+        .ui-panel { margin-top: 10px; display: flex; justify-content: center; gap: 15px; align-items: center; flex-wrap: wrap; }
+        button { padding: 8px 16px; font-size: 15px; cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 4px; font-weight: bold; }
+        button:hover { background: #45a049; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        .weapon-btn { background: #34495e; border: 2px solid #7f8c8d; }
+        .weapon-btn.active { background: #2980b9; border-color: #fff; box-shadow: 0 0 8px rgba(255,255,255,0.4); }
+        .hand-container { display: flex; justify-content: center; gap: 10px; margin-top: 10px; }
+        .hand-slot { width: 60px; height: 60px; background: #444; border: 2px dashed #888; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 20px; cursor: grab; user-select: none; }
+        .hand-slot:active { cursor: grabbing; }
+        .instruction { color: #aaa; font-size: 14px; margin-top: 5px; }
+        .stats-bar { display: flex; justify-content: center; gap: 30px; font-size: 18px; margin-bottom: 5px; }
+        .gold { color: #f1c40f; }
+        .hp { color: #e74c3c; font-weight: bold; }
+        .wave-info { color: #3498db; font-weight: bold; }
+    </style>
+</head>
+<body>
 
+    <h1>字根武器塔防 - 穩定綁定防搶字版</h1>
+    <div class="stats-bar">
+        <div>生命值: <span id="hpDisplay" class="hp">20 / 20</span></div>
+        <div>金幣: <span id="goldDisplay" class="gold">130</span> G</div>
+        <div>當前進度: <span id="waveDisplay" class="wave-info">準備開始 (第 1 / 5 波)</span></div>
+    </div>
+    <p class="instruction">點擊場上武器可查看攻擊範圍；將手牌拖到已綁定飾字上可直接替換屬性，舊字自動回手！</p>
+
+    <!-- 遊戲畫布 (800x450) -->
+    <canvas id="gameCanvas" width="800" height="450" draggable="true"></canvas>
+
+    <!-- 介面控制區 -->
+    <div class="ui-panel">
+        <span>建造選擇：</span>
+        <button id="btnWeapon_刀" class="weapon-btn active" onclick="selectWeaponToBuild('刀')">刀 (均衡)</button>
+        <button id="btnWeapon_弓" class="weapon-btn" onclick="selectWeaponToBuild('弓')">弓 (遠程狙擊)</button>
+        <button id="btnWeapon_杖" class="weapon-btn" onclick="selectWeaponToBuild('杖')">杖 (範圍群傷)</button>
+        <button onclick="drawRune()">抽修飾字 (10G)</button>
+        <button id="startWaveBtn" onclick="startNextWave()" style="background: #e67e22;">開始第 1 波</button>
+    </div>
+
+    <p>手牌暫存區 (僅限未綁定的修飾字可拖回回收):</p>
+    <div class="hand-container">
+        <div class="hand-slot" id="slot0" ondragover="allowDrop(event)" ondrop="dropToHand(event, 0)">（空）</div>
+        <div class="hand-slot" id="slot1" ondragover="allowDrop(event)" ondrop="dropToHand(event, 1)">（空）</div>
+        <div class="hand-slot" id="slot2" ondragover="allowDrop(event)" ondrop="dropToHand(event, 2)">（空）</div>
+    </div>
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const TILE_SIZE = 50; 
+    const COLS = 16;
+    const ROWS = 9;
+
+    let playerHp = 20;
+    const maxHp = 20;
+    let playerGold = 130;
+    let selectedWeaponType = '刀';
+
+    let currentWave = 0;
+    let gameState = "PREPARE"; 
+    let enemiesToSpawnCount = 0;
+    let spawnInterval = 45; 
+    let spawnCounter = 0;
+
+    // 當前選取的格子座標 {r, c}，若無選取則為 null
+    let selectedGridPos = null;
+
+    const waveConfigs = [
+        { wave: 1, count: 6, health: 70, speed: 1.4, isBoss: false },
+        { wave: 2, count: 10, health: 100, speed: 1.5, isBoss: false },
+        { wave: 3, count: 14, health: 150, speed: 1.6, isBoss: false },
+        { wave: 4, count: 18, health: 220, speed: 1.7, isBoss: false },
+        { wave: 5, count: 1, health: 1100, speed: 1.1, isBoss: true }
+    ];
+
+    const pathTiles = [
+        {c: 0, r: 4}, {c: 1, r: 4}, {c: 2, r: 4}, {c: 3, r: 4}, 
+        {c: 3, r: 3}, {c: 3, r: 2}, {c: 4, r: 2}, {c: 5, r: 2}, 
+        {c: 5, r: 3}, {c: 5, r: 4}, {c: 5, r: 5}, {c: 5, r: 6}, 
+        {c: 6, r: 6}, {c: 7, r: 6}, {c: 8, r: 6}, {c: 9, r: 6}, 
+        {c: 9, r: 5}, {c: 9, r: 4}, {c: 10, r: 4}, {c: 11, r: 4}, 
+        {c: 12, r: 4}, {c: 13, r: 4}, {c: 14, r: 4}, {c: 15, r: 4}
+    ];
+
+    let grid = Array(ROWS).fill(null).map(() => Array(COLS).fill(null));
+
+    let enemies = [];
+    let bullets = [];   
+    let playerHand = []; 
+
+    let waypoints = pathTiles.map(p => ({
+        x: p.c * TILE_SIZE + TILE_SIZE / 2,
+        y: p.r * TILE_SIZE + TILE_SIZE / 2
+    }));
+
+    const weaponTypes = ["刀", "弓", "杖"];
+    const modifiersPool = ["長", "小", "重", "冰", "火", "雷"];
+
+    function selectWeaponToBuild(w) {
+        selectedWeaponType = w;
+        weaponTypes.forEach(type => {
+            let btn = document.getElementById("btnWeapon_" + type);
+            if (btn) {
+                if (type === w) btn.classList.add("active");
+                else btn.classList.remove("active");
+            }
+        });
+    }
+
+    function startNextWave() {
+        if (gameState === "WAVE" || gameState === "DEFEAT") return;
+
+        currentWave++;
+        if (currentWave > 5) {
+            alert("恭喜您已經通關所有波次！");
+            return;
+        }
+
+        gameState = "WAVE";
+        let config = waveConfigs[currentWave - 1];
+        enemiesToSpawnCount = config.count;
+        spawnCounter = 0;
+
+        document.getElementById("startWaveBtn").innerText = `第 ${currentWave} 波戰鬥中...`;
+        document.getElementById("startWaveBtn").disabled = true;
+        document.getElementById("waveDisplay").innerText = `第 ${currentWave} / 5 波戰鬥進行中`;
+    }
+
+    function drawRune() {
+        if (gameState === "DEFEAT") return;
+        if (playerGold < 10) { alert("金幣不足！"); return; }
+        if (playerHand.length >= 3) { alert("手牌已滿！"); return; }
+        
+        playerGold -= 10;
+        let randomMod = modifiersPool[Math.floor(Math.random() * modifiersPool.length)];
+        playerHand.push(randomMod);
+        updateUI();
+    }
+
+    function updateUI() {
+        document.getElementById("hpDisplay").innerText = `${playerHp} / ${maxHp}`;
+        document.getElementById("goldDisplay").innerText = playerGold;
+        for (let i = 0; i < 3; i++) {
+            let slot = document.getElementById("slot" + i);
+            slot.innerText = playerHand[i] ? playerHand[i] : "（空）";
+        }
+    }
+
+    function isPath(c, r) {
+        return pathTiles.some(p => p.c === c && p.r === r);
+    }
+
+    // 拖曳狀態管理
+    let draggedSource = null; 
+    let draggedData = null;   
+
+    for (let i = 0; i < 3; i++) {
+        let slotElem = document.getElementById("slot" + i);
+        slotElem.setAttribute("draggable", "true");
+        slotElem.addEventListener("dragstart", (e) => {
+            if (i < playerHand.length) {
+                draggedSource = 'hand';
+                draggedData = i;
+                e.dataTransfer.setData("text/plain", "hand:" + i);
+            } else {
+                e.preventDefault();
+            }
+        });
+    }
+
+    canvas.addEventListener("dragstart", (e) => {
+        if (gameState === "DEFEAT") { e.preventDefault(); return; }
+        const rect = canvas.getBoundingClientRect();
+        let c = Math.floor((e.clientX - rect.left) / TILE_SIZE);
+        let r = Math.floor((e.clientY - rect.top) / TILE_SIZE);
+
+        if (c >= 0 && c < COLS && r >= 0 && r < ROWS) {
+            let cell = grid[r][c];
+            if (!cell) {
+                e.preventDefault();
+                return;
+            }
+
+            // 若拖動的字原本有搭檔，主動解除搭檔的綁定狀態
+            if (cell.isLocked && cell.partnerPos) {
+                let p = cell.partnerPos;
+                let partner = grid[p.r][p.c];
+                if (partner) {
+                    partner.isLocked = false;
+                    partner.partnerPos = null;
+                    partner.orientation = null;
+                }
+                cell.isLocked = false;
+                cell.partnerPos = null;
+                cell.orientation = null;
+            }
+
+            draggedSource = 'grid';
+            draggedData = { c: c, r: r, cell: cell };
+            e.dataTransfer.setData("text/plain", "grid:" + c + "," + r);
+
+            grid[r][c] = null; 
+            evaluateGrid();    
+        }
+    });
+
+    canvas.addEventListener("dragover", (e) => { e.preventDefault(); });
+
+    canvas.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        let c = Math.floor((e.clientX - rect.left) / TILE_SIZE);
+        let r = Math.floor((e.clientY - rect.top) / TILE_SIZE);
+
+        if (c < 0 || c >= COLS || r < 0 || r >= ROWS || isPath(c, r)) {
+            restoreDragSource();
+            return;
+        }
+
+        let targetCell = grid[r][c];
+
+        // 1. 來源是手牌
+        if (draggedSource === 'hand') {
+            let handIndex = draggedData;
+            let droppedChar = playerHand[handIndex];
+
+            if (targetCell !== null) {
+                if (targetCell.type === 'weapon') {
+                    alert("武器不能收進手牌！請將飾字放在武器的左方或上方空格。");
+                    draggedSource = null;
+                    draggedData = null;
+                    return;
+                }
+
+                // 目標是修飾字（不論是否鎖定）：允許直接置換，舊字退回手牌，並完整保留原本的鎖定關係
+                let oldChar = targetCell.char;
+                targetCell.char = droppedChar;
+                playerHand[handIndex] = oldChar;
+                updateUI();
+                evaluateGrid();
+                draggedSource = null;
+                draggedData = null;
+                return;
+            }
+
+            grid[r][c] = {
+                char: droppedChar,
+                type: 'modifier',
+                isLocked: false,
+                partnerPos: null,
+                orientation: null,
+                color: '#7f8c8d'
+            };
+            playerHand.splice(handIndex, 1);
+            updateUI();
+        }
+        // 2. 來源是地圖格子
+        else if (draggedSource === 'grid') {
+            let src = draggedData;
+            if (targetCell !== null) {
+                if (targetCell.isLocked && targetCell.partnerPos) {
+                    let tp = targetCell.partnerPos;
+                    let tPartner = grid[tp.r][tp.c];
+                    if (tPartner) {
+                        tPartner.isLocked = false;
+                        tPartner.partnerPos = null;
+                        tPartner.orientation = null;
+                    }
+                    targetCell.isLocked = false;
+                    targetCell.partnerPos = null;
+                    targetCell.orientation = null;
+                }
+
+                grid[r][c] = src.cell;
+                grid[src.r][src.c] = targetCell;
+            } else {
+                grid[r][c] = src.cell;
+            }
+        }
+
+        draggedSource = null;
+        draggedData = null;
+        evaluateGrid(); 
+    });
+
+    function restoreDragSource() {
+        if (draggedSource === 'grid') {
+            let src = draggedData;
+            grid[src.r][src.c] = src.cell; 
+        }
+        draggedSource = null;
+        draggedData = null;
+        evaluateGrid();
+    }
+
+    function allowDrop(ev) { ev.preventDefault(); }
+
+    function dropToHand(ev, slotIndex) {
+        ev.preventDefault();
+        if (draggedSource === 'grid') {
+            let src = draggedData;
+            
+            if (src.cell.type === 'weapon') {
+                alert("武器（刀/弓/杖）造好後無法收回手牌，只能在地圖上移動位置！");
+                grid[src.r][src.c] = src.cell; 
+                draggedSource = null;
+                draggedData = null;
+                evaluateGrid();
+                return;
+            }
+
+            if (playerHand.length < 3) {
+                playerHand.push(src.cell.char);
+                updateUI();
+                evaluateGrid();
+            } else {
+                alert("手牌已滿，無法回收！原棋子已放回。");
+                grid[src.r][src.c] = src.cell; 
+            }
+        }
+        draggedSource = null;
+        draggedData = null;
+    }
+
+    // 點擊事件：分離「選取顯示範圍」與「空地建造」邏輯
+    canvas.addEventListener("click", (e) => {
+        if (draggedSource || gameState === "DEFEAT") return;
+
+        const rect = canvas.getBoundingClientRect();
+        let c = Math.floor((e.clientX - rect.left) / TILE_SIZE);
+        let r = Math.floor((e.clientY - rect.top) / TILE_SIZE);
+
+        if (c >= 0 && c < COLS && r >= 0 && r < ROWS) {
+            // 點擊路徑：清空選取
+            if (isPath(c, r)) {
+                selectedGridPos = null;
+                return;
+            }
+
+            let cell = grid[r][c];
+
+            // 1. 點擊已有內容的格子
+            if (cell !== null) {
+                if (cell.type === 'weapon') {
+                    // 選取該武器
+                    selectedGridPos = { r: r, c: c };
+                } else if (cell.type === 'modifier' && cell.isLocked && cell.partnerPos) {
+                    // 若點擊的是已鎖定的飾字，自動選取與其相連的搭檔武器
+                    selectedGridPos = { r: cell.partnerPos.r, c: cell.partnerPos.c };
+                } else {
+                    selectedGridPos = null;
+                }
+                return;
+            }
+
+            // 2. 點擊空白格子：建造新武器
+            selectedGridPos = null;
+
+            if (playerGold < 30) {
+                alert("金幣不足 30G，無法建造武器！");
+                return;
+            }
+
+            playerGold -= 30;
+            grid[r][c] = {
+                char: selectedWeaponType,
+                type: 'weapon',
+                isLocked: false,
+                partnerPos: null,
+                orientation: null,
+                range: 110, damage: 15, attackSpeed: 1.0, aoe: 0, effect: 'none', color: '#3498db',
+                lastAttackTime: 0
+            };
+            // 建造後預設選取新武器
+            selectedGridPos = { r: r, c: c };
+            updateUI();
+            evaluateGrid();
+        } else {
+            selectedGridPos = null;
+        }
+    });
+
+    // 核心持久化穩定配對邏輯
+    function evaluateGrid() {
+        // 第一步：驗證所有既有鎖定是否合法
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                let cell = grid[r][c];
+                if (!cell || !cell.isLocked || !cell.partnerPos) continue;
+
+                let p = cell.partnerPos;
+                let partner = (p.r >= 0 && p.r < ROWS && p.c >= 0 && p.c < COLS) ? grid[p.r][p.c] : null;
+
+                let isAdjacent = partner && (Math.abs(r - p.r) + Math.abs(c - p.c) === 1);
+                let isMutual = partner && partner.isLocked && partner.partnerPos && 
+                               partner.partnerPos.r === r && partner.partnerPos.c === c;
+
+                if (!isAdjacent || !isMutual) {
+                    cell.isLocked = false;
+                    cell.partnerPos = null;
+                    cell.orientation = null;
+                }
+            }
+        }
+
+        // 第二步：重置未鎖定格子的基礎數值
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                let cell = grid[r][c];
+                if (!cell) continue;
+
+                if (!cell.isLocked) {
+                    cell.partnerPos = null;
+                    cell.orientation = null;
+                    cell.effect = 'none';
+
+                    if (cell.type === 'weapon') {
+                        if (cell.char === '刀') {
+                            cell.range = 115; cell.damage = 18; cell.attackSpeed = 1.0; cell.aoe = 0; cell.color = '#3498db';
+                        } else if (cell.char === '弓') {
+                            cell.range = 185; cell.damage = 11; cell.attackSpeed = 1.5; cell.aoe = 0; cell.color = '#1abc9c';
+                        } else if (cell.char === '杖') {
+                            cell.range = 120; cell.damage = 15; cell.attackSpeed = 0.8; cell.aoe = 35; cell.color = '#9b59b6';
+                        }
+                    } else if (cell.type === 'modifier') {
+                        cell.color = '#7f8c8d';
+                    }
+                }
+            }
+        }
+
+        // 第三步：為未鎖定的武器尋找未鎖定的修飾字
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                let cell = grid[r][c];
+                if (!cell || cell.type !== 'weapon' || cell.isLocked) continue;
+
+                let leftCell = (c > 0) ? grid[r][c-1] : null;
+                let topCell = (r > 0) ? grid[r-1][c] : null;
+
+                let matchedModCell = null;
+                let matchedPos = null;
+                let orientation = '';
+
+                if (leftCell && leftCell.type === 'modifier' && !leftCell.isLocked) {
+                    matchedModCell = leftCell;
+                    matchedPos = {r: r, c: c-1};
+                    orientation = 'horizontal';
+                } else if (topCell && topCell.type === 'modifier' && !topCell.isLocked) {
+                    matchedModCell = topCell;
+                    matchedPos = {r: r-1, c: c};
+                    orientation = 'vertical';
+                }
+
+                if (matchedModCell) {
+                    cell.isLocked = true;
+                    cell.partnerPos = matchedPos;
+                    cell.orientation = orientation;
+
+                    matchedModCell.isLocked = true;
+                    matchedModCell.partnerPos = {r: r, c: c};
+                    matchedModCell.orientation = orientation;
+                }
+            }
+        }
+
+        // 第四步：為已鎖定的組合計算數值加成與主題色
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                let cell = grid[r][c];
+                if (!cell || cell.type !== 'weapon' || !cell.isLocked || !cell.partnerPos) continue;
+
+                let p = cell.partnerPos;
+                let modCell = grid[p.r][p.c];
+                if (!modCell) continue;
+
+                let mod = modCell.char;
+                let w = cell.char;
+                let themeColor = '#3498db';
+
+                if (mod === "長") {
+                    themeColor = "#e67e22";
+                    cell.range = (w === '弓') ? 250 : (w === '杖' ? 175 : 180);
+                    cell.damage = (w === '弓') ? 14 : (w === '杖' ? 20 : 25);
+                } else if (mod === "小") {
+                    themeColor = "#9b59b6";
+                    cell.range = (w === '弓') ? 150 : 90;
+                    cell.damage = (w === '弓') ? 8 : (w === '杖' ? 10 : 12);
+                    cell.attackSpeed = (w === '弓') ? 3.2 : 2.6;
+                } else if (mod === "重") {
+                    themeColor = "#c0392b";
+                    cell.range = (w === '弓') ? 170 : 110;
+                    cell.damage = (w === '弓') ? 45 : (w === '杖' ? 55 : 75);
+                    cell.attackSpeed = (w === '弓') ? 0.7 : 0.45;
+                    if (w === '杖') cell.aoe = 55;
+                } else if (mod === "冰") {
+                    themeColor = "#00bcd4";
+                    cell.effect = 'slow';
+                    cell.damage = (w === '弓') ? 10 : (w === '杖' ? 14 : 16);
+                    if (w === '杖') cell.aoe = 40;
+                } else if (mod === "火") {
+                    themeColor = "#e74c3c";
+                    cell.effect = 'burn';
+                    cell.damage = (w === '弓') ? 13 : (w === '杖' ? 18 : 22);
+                    if (w === '杖') cell.aoe = 40;
+                } else if (mod === "雷") {
+                    themeColor = "#f1c40f";
+                    cell.effect = 'stun';
+                    cell.damage = (w === '弓') ? 12 : (w === '杖' ? 16 : 20);
+                }
+
+                cell.color = themeColor;
+                modCell.color = themeColor;
+            }
+        }
+    }
+
+    // 遊戲主迴圈
+    function gameLoop() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (gameState === "WAVE" && enemiesToSpawnCount > 0) {
+            spawnCounter++;
+            if (spawnCounter >= spawnInterval) {
+                let config = waveConfigs[currentWave - 1];
+                enemies.push({
+                    x: waypoints[0].x, y: waypoints[0].y,
+                    targetIndex: 1,
+                    radius: config.isBoss ? 18 : 10,
+                    baseSpeed: config.speed,
+                    speed: config.speed,
+                    health: config.health,
+                    maxHealth: config.health,
+                    isBoss: config.isBoss,
+                    slowTimer: 0,
+                    burnTimer: 0,
+                    stunTimer: 0
+                });
+                enemiesToSpawnCount--;
+                spawnCounter = 0;
+            }
+        }
+
+        if (gameState === "WAVE" && enemiesToSpawnCount === 0 && enemies.length === 0) {
+            if (currentWave < 5) {
+                gameState = "PREPARE";
+                playerGold += 50; 
+                updateUI();
+                document.getElementById("startWaveBtn").innerText = `開始第 ${currentWave + 1} 波`;
+                document.getElementById("startWaveBtn").disabled = false;
+                document.getElementById("waveDisplay").innerText = `第 ${currentWave} 波勝利！獲得 50G 獎勵`;
+            } else {
+                gameState = "VICTORY";
+                document.getElementById("waveDisplay").innerText = "🏆 恭喜通關全部 5 波！";
+                document.getElementById("startWaveBtn").innerText = "通關完成";
+            }
+        }
+
+        // 網格與道路繪製
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                let x = c * TILE_SIZE;
+                let y = r * TILE_SIZE;
+                ctx.strokeStyle = "rgba(255,255,255,0.05)";
+                ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
+
+                if (isPath(c, r)) {
+                    ctx.fillStyle = "#333";
+                    ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                }
+            }
+        }
+
+        let lastTile = pathTiles[pathTiles.length - 1];
+        ctx.fillStyle = "rgba(231, 76, 60, 0.25)";
+        ctx.fillRect(lastTile.c * TILE_SIZE, lastTile.r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        ctx.strokeStyle = "#e74c3c";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(lastTile.c * TILE_SIZE, lastTile.r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+
+        // 繪製相融色塊
+        let drawnMerged = Array(ROWS).fill(null).map(() => Array(COLS).fill(false));
+
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                let cell = grid[r][c];
+                if (!cell) continue;
+
+                let x = c * TILE_SIZE;
+                let y = r * TILE_SIZE;
+
+                if (cell.isLocked && cell.partnerPos) {
+                    let p = cell.partnerPos;
+                    let isMaster = (r < p.r) || (r === p.r && c < p.c);
+                    if (isMaster && !drawnMerged[r][c]) {
+                        drawnMerged[r][c] = true;
+                        drawnMerged[p.r][p.c] = true;
+
+                        let px = c * TILE_SIZE;
+                        let py = r * TILE_SIZE;
+                        ctx.fillStyle = cell.color;
+
+                        if (cell.orientation === 'horizontal') {
+                            ctx.fillRect(px + 4, py + 4, TILE_SIZE * 2 - 8, TILE_SIZE - 8);
+                            ctx.strokeStyle = "#fff";
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(px + 4, py + 4, TILE_SIZE * 2 - 8, TILE_SIZE - 8);
+                        } else if (cell.orientation === 'vertical') {
+                            ctx.fillRect(px + 4, py + 4, TILE_SIZE - 8, TILE_SIZE * 2 - 8);
+                            ctx.strokeStyle = "#fff";
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(px + 4, py + 4, TILE_SIZE - 8, TILE_SIZE * 2 - 8);
+                        }
+                    } else if (!drawnMerged[r][c]) {
+                        drawnMerged[r][c] = true;
+                    }
+                } else {
+                    ctx.fillStyle = cell.color;
+                    ctx.fillRect(x + 4, y + 4, TILE_SIZE - 8, TILE_SIZE - 8);
+                    ctx.strokeStyle = cell.isLocked ? "#fff" : "#bdc3c7";
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x + 4, y + 4, TILE_SIZE - 8, TILE_SIZE - 8);
+                }
+            }
+        }
+
+        // 僅在點選武器時單獨繪製該武器的攻擊範圍圈
+        if (selectedGridPos) {
+            let selCell = grid[selectedGridPos.r][selectedGridPos.c];
+            if (selCell && selCell.type === 'weapon') {
+                let sx = selectedGridPos.c * TILE_SIZE + TILE_SIZE / 2;
+                let sy = selectedGridPos.r * TILE_SIZE + TILE_SIZE / 2;
+
+                ctx.beginPath();
+                ctx.arc(sx, sy, selCell.range, 0, Math.PI * 2);
+                ctx.fillStyle = "rgba(52, 152, 219, 0.12)";
+                ctx.fill();
+                ctx.strokeStyle = "rgba(52, 152, 219, 0.6)";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // 為選取的格子加上高亮外邊框
+                ctx.strokeStyle = "#f1c40f";
+                ctx.lineWidth = 2;
+                ctx.strokeRect(selectedGridPos.c * TILE_SIZE + 2, selectedGridPos.r * TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+            }
+        }
+
+        // 繪製文字
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                let cell = grid[r][c];
+                if (!cell) continue;
+
+                let x = c * TILE_SIZE + TILE_SIZE / 2;
+                let y = r * TILE_SIZE + TILE_SIZE / 2;
+
+                ctx.fillStyle = "white";
+                ctx.font = "bold 16px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText(cell.char, x, y + 6);
+            }
+        }
+
+        // 攻擊迴圈
+        if (gameState !== "DEFEAT") {
+            let currentTime = Date.now();
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    let t = grid[r][c];
+                    if (!t || t.type !== 'weapon') continue;
+
+                    let x = c * TILE_SIZE + TILE_SIZE / 2;
+                    let realY = r * TILE_SIZE + TILE_SIZE / 2;
+
+                    let attackInterval = 1000 / t.attackSpeed;
+                    if (currentTime - t.lastAttackTime >= attackInterval) {
+                        let target = null;
+                        for (let enemy of enemies) {
+                            let dist = Math.hypot(enemy.x - x, enemy.y - realY);
+                            if (dist <= t.range) {
+                                target = enemy;
+                                break;
+                            }
+                        }
+
+                        if (target) {
+                            bullets.push({
+                                x: x, y: realY,
+                                target: target,
+                                speed: (t.char === '弓') ? 8 : (t.char === '杖' ? 5 : 6),
+                                damage: t.damage,
+                                effect: t.effect,
+                                aoe: t.aoe,
+                                color: (t.char === '弓') ? '#1abc9c' : (t.char === '杖' ? '#e056fd' : '#f1c40f')
+                            });
+                            t.lastAttackTime = currentTime;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 子彈更新
+        for (let i = bullets.length - 1; i >= 0; i--) {
+            let b = bullets[i];
+            if (b.target && b.target.health > 0) {
+                let angle = Math.atan2(b.target.y - b.y, b.target.x - b.x);
+                b.x += Math.cos(angle) * b.speed;
+                b.y += Math.sin(angle) * b.speed;
+
+                let hitDist = Math.hypot(b.x - b.target.x, b.y - b.target.y);
+                if (hitDist < 10) {
+                    if (b.aoe > 0) {
+                        for (let other of enemies) {
+                            let d = Math.hypot(other.x - b.x, other.y - b.y);
+                            if (d <= b.aoe) {
+                                other.health -= b.damage;
+                                applyEffect(other, b.effect);
+                            }
+                        }
+                    } else {
+                        b.target.health -= b.damage;
+                        applyEffect(b.target, b.effect);
+                    }
+
+                    bullets.splice(i, 1);
+                }
+            } else {
+                bullets.splice(i, 1);
+            }
+
+            if (bullets[i]) {
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, (b.aoe > 0) ? 6 : 4, 0, Math.PI * 2);
+                ctx.fillStyle = b.color;
+                ctx.fill();
+            }
+        }
+
+        // 敵人更新與扣血
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            let enemy = enemies[i];
+
+            let currentSpeed = enemy.baseSpeed;
+            if (enemy.stunTimer > 0) {
+                enemy.stunTimer--;
+                currentSpeed = 0;
+            } else if (enemy.slowTimer > 0) {
+                enemy.slowTimer--;
+                currentSpeed *= 0.5;
+            }
+
+            if (enemy.burnTimer > 0) {
+                enemy.burnTimer--;
+                enemy.health -= 0.15;
+            }
+
+            let targetPoint = waypoints[enemy.targetIndex];
+            let angle = Math.atan2(targetPoint.y - enemy.y, targetPoint.x - enemy.x);
+            enemy.x += Math.cos(angle) * currentSpeed;
+            enemy.y += Math.sin(angle) * currentSpeed;
+
+            let distToWaypoint = Math.hypot(targetPoint.x - enemy.x, targetPoint.y - enemy.y);
+            if (distToWaypoint < 2) {
+                enemy.targetIndex++;
+                
+                if (enemy.targetIndex >= waypoints.length) {
+                    let damageToPlayer = enemy.isBoss ? 5 : 1;
+                    playerHp = Math.max(0, playerHp - damageToPlayer);
+                    updateUI();
+
+                    enemies.splice(i, 1);
+
+                    if (playerHp <= 0) {
+                        gameState = "DEFEAT";
+                        document.getElementById("waveDisplay").innerText = "💀 防線被突破，遊戲失敗！";
+                        document.getElementById("startWaveBtn").innerText = "重新整理重來";
+                        document.getElementById("startWaveBtn").disabled = false;
+                        document.getElementById("startWaveBtn").onclick = () => location.reload();
+                    }
+                    continue;
+                }
+            }
+
+            ctx.beginPath();
+            ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+            if (enemy.slowTimer > 0) ctx.fillStyle = "#00bcd4";
+            else if (enemy.burnTimer > 0) ctx.fillStyle = "#e74c3c";
+            else ctx.fillStyle = enemy.isBoss ? "#8e44ad" : "#e67e22";
+            ctx.fill();
+            ctx.stroke();
+
+            let barWidth = enemy.isBoss ? 36 : 24;
+            ctx.fillStyle = "#555";
+            ctx.fillRect(enemy.x - barWidth/2, enemy.y - (enemy.isBoss ? 26 : 18), barWidth, 4);
+            ctx.fillStyle = "#2ecc71";
+            let healthPercent = Math.max(0, enemy.health / enemy.maxHealth);
+            ctx.fillRect(enemy.x - barWidth/2, enemy.y - (enemy.isBoss ? 26 : 18), barWidth * healthPercent, 4);
+
+            if (enemy.health <= 0) {
+                playerGold += enemy.isBoss ? 100 : 15; 
+                updateUI();
+                enemies.splice(i, 1);
+            }
+        }
+
+        if (gameState === "DEFEAT") {
+            ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "#e74c3c";
+            ctx.font = "bold 32px sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText("防 線 陷 落 - 挑 戰 失 敗", canvas.width / 2, canvas.height / 2);
+        }
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    function applyEffect(target, effect) {
+        if (effect === 'slow') {
+            target.slowTimer = 120;
+        } else if (effect === 'burn') {
+            target.burnTimer = 180;
+        } else if (effect === 'stun') {
+            target.stunTimer = 20;
+        }
+    }
+
+    gameLoop();
+</script>
+
+</body>
+</html>
